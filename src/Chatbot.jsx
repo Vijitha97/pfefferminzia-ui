@@ -5,33 +5,90 @@ import "./Chatbot.css";
 
 const Chatbot = () => {
   const [chats, setChats] = useState([
-    { id: 1, name: "Neuer Chat", messages: [{ id: 1, text: "Hallo! Wie kann ich Ihnen weiterhelfen?", sender: "bot" }] }
+    { id: 1, name: "Neuer Chat", messages: [{ id: 1, text: "Hallo! Wie kann ich Ihnen helfen?", sender: "bot" }] }
   ]);
   const [currentChatId, setCurrentChatId] = useState(1);
   const [input, setInput] = useState("");
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!input.trim()) return;
-    setChats((prevChats) => {
-      return prevChats.map((chat) => {
-        if (chat.id === currentChatId) {
-          return {
-            ...chat,
-            messages: [...chat.messages, { id: chat.messages.length + 1, text: input, sender: "user" },
-              { id: chat.messages.length + 2, text: "Hier kommt die Antwort", sender: "bot" }]
-          };
-        }
-        return chat;
-      });
-    });
+  
+    const userMessage = { id: Date.now(), text: input, sender: "user" };
+    let botMessage = { id: Date.now() + 1, text: "Warte auf Antwort...", sender: "bot" };
+  
+    setChats((prevChats) =>
+      prevChats.map((chat) =>
+        chat.id === currentChatId
+          ? { ...chat, messages: [...chat.messages, userMessage, botMessage] }
+          : chat
+      )
+    );
+  
     setInput("");
+  
+    try {
+
+  
+      const response = await fetch("http://localhost:8000/stream");
+  
+      if (!response.ok) {
+        throw new Error(`API-Fehler: ${response.status} ${response.statusText}`);
+      }
+  
+      if (!response.body) {
+        throw new Error("Response body is empty.");
+      }
+  
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      botMessage.text = "";
+  
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+  
+        const chunk = decoder.decode(value, { stream: true });
+        console.log("Chunk erhalten:", chunk);
+  
+        botMessage.text += chunk;
+  
+        setChats((prevChats) =>
+          prevChats.map((chat) =>
+            chat.id === currentChatId
+              ? {
+                  ...chat,
+                  messages: chat.messages.map((msg) =>
+                    msg.id === botMessage.id ? { ...botMessage } : msg
+                  ),
+                }
+              : chat
+          )
+        );
+      }
+    } catch (error) {
+      console.error("Fehler beim Abrufen der Antwort:", error);
+      botMessage.text = `Fehler beim Laden: ${error.message}`;
+  
+      setChats((prevChats) =>
+        prevChats.map((chat) =>
+          chat.id === currentChatId
+            ? {
+                ...chat,
+                messages: chat.messages.map((msg) =>
+                  msg.id === botMessage.id ? botMessage : msg
+                ),
+              }
+            : chat
+        )
+      );
+    }
   };
 
   const handleNewChat = () => {
     const newChat = {
       id: chats.length + 1,
       name: `Chat ${chats.length + 1}`,
-      messages: [{ id: 1, text: "Hallo! Wie kann ich Ihnen weiterhelfen?", sender: "bot" }]
+      messages: [{ id: 1, text: "Hallo! Wie kann ich Ihnen helfen?", sender: "bot" }]
     };
     setChats([...chats, newChat]);
     setCurrentChatId(newChat.id);
@@ -90,14 +147,13 @@ const Chatbot = () => {
         </motion.div>
       </div>
       <div className="footer-info">
-      <p >Tool by</p>
+        <p>Tool by</p>
         <img src="/fairdigital-logo.png" alt="fd-logo" className="footer-logo" />
         <p>&</p>
         <img src="/Alan_logo_weiß.svg" alt="alan" className="footer-logo" />
       </div>
-      </div>
+    </div>
   );
 };
 
 export default Chatbot;
-
